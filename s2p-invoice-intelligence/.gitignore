@@ -1,0 +1,25 @@
+# Environment
+.env
+.streamlit/secrets.toml
+
+# Generated data (don't commit PDFs or DB)
+data/invoices/
+data/pos/
+data/chroma_db/
+data/extracted_invoices.json
+data/anomalies.json
+data/extraction_failures.json
+data/invoices_meta.json
+data/pos_meta.json
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+env/
+
+# OS
+.DS_Store
+Thumbs.db
