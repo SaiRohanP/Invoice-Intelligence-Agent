@@ -15,14 +15,27 @@ load_dotenv()
 
 import subprocess, pathlib
 
+# Always resolve paths relative to this file, not the working directory
+PROJECT_ROOT = pathlib.Path(__file__).parent
+
 def bootstrap_data():
-    if not pathlib.Path("data/extracted_invoices.json").exists():
+    if not (PROJECT_ROOT / "data/extracted_invoices.json").exists():
         with st.spinner("First-run setup: generating sample data (~15 seconds)..."):
-            subprocess.run(["python", "s2p-invoice-intelligence/data/generate_documents.py"], check=True)
-            subprocess.run(["python", "s2p-invoice-intelligence/extraction/batch_extract.py"], check=True)  # no API
-            subprocess.run(["python", "s2p-invoice-intelligence/rag/build_vectorstore.py"], check=True)
+            subprocess.run(
+                ["python", "data/generate_documents.py"],
+                cwd=PROJECT_ROOT, check=True
+            )
+            subprocess.run(
+                ["python", "extraction/batch_extract.py"],
+                cwd=PROJECT_ROOT, check=True
+            )
+            subprocess.run(
+                ["python", "rag/build_vectorstore.py"],
+                cwd=PROJECT_ROOT, check=True
+            )
 
 bootstrap_data()
+
 sys.path.insert(0, str(Path(__file__).parent))
 
 # ── Page config ──────────────────────────────────────────────────────────────
