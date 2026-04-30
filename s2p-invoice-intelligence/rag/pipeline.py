@@ -13,7 +13,7 @@ load_dotenv()
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from langchain_community.vectorstores import Chroma
-from langchain_anthropic import ChatAnthropic
+from langchain_groq import ChatGroq
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_core.documents import Document
 from langchain_core.prompts import PromptTemplate
@@ -121,7 +121,7 @@ def build_qa_chain(vectorstore: Chroma):
     Returns a chain that accepts {"question": str} and returns
     {"result": str, "source_documents": list[Document]}.
     """
-    llm       = ChatAnthropic(model="claude-haiku-4-5-20251001", max_tokens=512)
+    llm = ChatGroq(model="llama-3.1-8b-instant", max_tokens=512)
     retriever = vectorstore.as_retriever(search_type="similarity", search_kwargs={"k": 6})
 
     # Retrieve docs and keep them for source attribution
