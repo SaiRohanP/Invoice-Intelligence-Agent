@@ -186,9 +186,19 @@ def generate_invoice(inv_id: int, po_id: int, vendor: dict,
 
 # ── Main generation ──────────────────────────────────────────────────────────
 if __name__ == "__main__":
+    # ── Configure here ──────────────────────────────
+    TOTAL_INVOICES   = 30    # change to however many you want
+    NUM_OVERCHARGE   = 1     # invoices with amount > PO approved
+    NUM_DUPLICATE    = 1     # invoices with duplicate invoice number
+    NUM_WRONG_PO     = 1     # invoices with invalid PO reference
+    # ────────────────────────────────────────────────
+
+    NUM_ANOMALIES = NUM_OVERCHARGE + NUM_DUPLICATE + NUM_WRONG_PO
+    NUM_NORMAL    = TOTAL_INVOICES - NUM_ANOMALIES
+
     print("Generating Purchase Orders...")
     pos = []
-    for i in range(1, 21):
+    for i in range(1, TOTAL_INVOICES + 1):
         vendor = VENDORS[i % len(VENDORS)]
         amount = round(random.uniform(5000, 100000), 2)
         pos.append(generate_po(i, vendor, amount))
@@ -198,36 +208,40 @@ if __name__ == "__main__":
     print("\nGenerating Invoices...")
     invoices = []
 
-    # Normal invoices (1–14)
-    for i in range(1, 15):
-        po   = pos[i - 1]
+    # Normal invoices
+    for i in range(1, NUM_NORMAL + 1):
+        po     = pos[i - 1]
         vendor = next(v for v in VENDORS if v["name"] == po["vendor_name"])
         amount = round(po["approved_amount"] * random.uniform(0.85, 1.0), 2)
         invoices.append(generate_invoice(i, i, vendor, amount))
 
-    # Anomaly: amount overcharge (15–17)
-    for i in range(15, 18):
-        po   = pos[i - 1]
+    # Anomaly: overcharge
+    for j in range(NUM_OVERCHARGE):
+        i      = NUM_NORMAL + j + 1
+        po     = pos[i - 1]
         vendor = next(v for v in VENDORS if v["name"] == po["vendor_name"])
         amount = round(po["approved_amount"] * random.uniform(1.1, 1.3), 2)
         invoices.append(generate_invoice(i, i, vendor, amount, anomaly="overcharge"))
 
-    # Anomaly: duplicate invoice number (18 duplicates 5)
-    po     = pos[4]
-    vendor = next(v for v in VENDORS if v["name"] == po["vendor_name"])
-    dup    = generate_invoice(18, 5, vendor, pos[4]["approved_amount"] * 0.9)
-    dup["invoice_number"] = "INV-0005"          # intentional duplicate
-    invoices.append(dup)
+    # Anomaly: duplicate invoice number
+    offset = NUM_NORMAL + NUM_OVERCHARGE
+    for j in range(NUM_DUPLICATE):
+        i      = offset + j + 1
+        po     = pos[4]
+        vendor = next(v for v in VENDORS if v["name"] == po["vendor_name"])
+        dup    = generate_invoice(i, 5, vendor, pos[4]["approved_amount"] * 0.9)
+        dup["invoice_number"] = "INV-0005"
+        invoices.append(dup)
 
-    # Anomaly: missing PO reference (19–20)
-    for i in range(19, 21):
-        po   = pos[i - 1]
+    # Anomaly: wrong PO reference
+    offset = NUM_NORMAL + NUM_OVERCHARGE + NUM_DUPLICATE
+    for j in range(NUM_WRONG_PO):
+        i      = offset + j + 1
+        po     = pos[i - 1]
         vendor = next(v for v in VENDORS if v["name"] == po["vendor_name"])
         amount = round(po["approved_amount"] * 0.9, 2)
-        inv  = generate_invoice(i, i, vendor, amount, anomaly="wrong_po")
-        invoices.append(inv)
+        invoices.append(generate_invoice(i, i, vendor, amount, anomaly="wrong_po"))
 
     json.dump(invoices, open("data/invoices_meta.json", "w"), indent=2)
-    print(f"  ✓ {len(invoices)} invoices saved to data/invoices/")
-    print("\n✅ All documents generated. Run extraction next!")
-    print("   python extraction/batch_extract.py")
+    print(f"  ✓ {TOTAL_INVOICES} invoices saved to data/invoices/")
+    print("\n✅ All documents generated. Run extraction next!\n   python extraction/batch_extract.py")

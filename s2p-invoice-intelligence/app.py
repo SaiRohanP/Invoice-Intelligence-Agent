@@ -102,7 +102,7 @@ st.markdown("""
 with st.sidebar:
     st.image("https://img.icons8.com/color/96/invoice.png", width=60)
     st.title("Invoice Intelligence\n Agent")
-    st.caption("AI-powered Source-to-Pay automation")
+    st.caption("AI-powered Source-to-Pay(ERP) automation")
     st.divider()
     page = st.radio(
         "Navigate",
@@ -137,20 +137,66 @@ def load_json(path: str, default=None):
 # ─────────────────────────────────────────────────────────────────────────────
 if page == "📤 Upload & Extract":
     st.header("📤 Upload & Extract Invoice")
-    st.caption("Upload an invoice PDF and PyMuPDF extracts all fields automatically.")
+    st.caption("Upload one or multiple invoice PDFs — all fields extracted automatically.")
 
-    uploaded = st.file_uploader(
-        "Drop your invoice PDF here", type=["pdf"], help="Supports standard & GST invoices"
+    import pandas as pd
+    from extraction.extractor import extract_invoice_data
+
+    # ── Mode toggle ───────────────────────────────────────────────────────────
+    mode = st.radio(
+        "Upload mode",
+        ["Single invoice", "Bulk upload"],
+        horizontal=True,
+        label_visibility="collapsed",
     )
 
-    if uploaded:
-        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
-            tmp.write(uploaded.getbuffer())
-            tmp_path = tmp.name
+    uploaded_files = st.file_uploader(
+        "Drop invoice PDF(s) here",
+        type=["pdf"],
+        accept_multiple_files=(mode == "Bulk upload"),
+        help="Supports standard & GST invoices",
+    )
 
-        with st.spinner("🔍 Extracting data..."):
+    # Normalise to always be a list
+    if uploaded_files is None:
+        uploaded_files = []
+    elif not isinstance(uploaded_files, list):
+        uploaded_files = [uploaded_files]
+
+    # ── Helper: save uploaded file to a temp path ─────────────────────────────
+    def _save_tmp(file) -> str:
+        tmp = tempfile.NamedTemporaryFile(suffix=".pdf", delete=False)
+        tmp.write(file.getbuffer())
+        tmp.close()
+        return tmp.name
+
+    # ── Helper: append results to extracted_invoices.json + vector store ──────
+    def _persist_results(new_results: list[dict]):
+        extracted_path = Path("data/extracted_invoices.json")
+        existing = json.load(open(extracted_path)) if extracted_path.exists() else []
+        existing_files = {r["source_file"] for r in existing}
+        added = [r for r in new_results if r["source_file"] not in existing_files]
+        if added:
+            json.dump(existing + added, open(extracted_path, "w"), indent=2)
+            # Update vector store with new documents
+            from rag.pipeline import get_embeddings, invoice_to_document, CHROMA_DIR
+            from langchain_community.vectorstores import Chroma
+            docs = [invoice_to_document(r) for r in added]
+            vs   = Chroma(
+                persist_directory=CHROMA_DIR,
+                embedding_function=get_embeddings(),
+                collection_name="s2p_invoices",
+            )
+            vs.add_documents(docs)
+        return len(added)
+
+    # ═════════════════════════════════════════════════════════════════════════
+    # SINGLE MODE
+    # ═════════════════════════════════════════════════════════════════════════
+    if mode == "Single invoice" and uploaded_files:
+        tmp_path = _save_tmp(uploaded_files[0])
+        with st.spinner("🔍 Extracting..."):
             try:
-                from extraction.extractor import extract_invoice_data
                 result = extract_invoice_data(tmp_path)
                 os.unlink(tmp_path)
                 st.success("✅ Extraction complete!")
@@ -159,16 +205,15 @@ if page == "📤 Upload & Extract":
                 st.error(f"Extraction failed: {e}")
                 st.stop()
 
-        # Display results
         col1, col2, col3 = st.columns(3)
-        col1.metric("Invoice Number",  result.get("invoice_number", "N/A"))
-        col2.metric("PO Reference",    result.get("po_reference", "N/A"))
-        col3.metric("Invoice Date",    result.get("invoice_date", "N/A"))
+        col1.metric("Invoice Number", result.get("invoice_number", "N/A"))
+        col2.metric("PO Reference",   result.get("po_reference", "N/A"))
+        col3.metric("Invoice Date",   result.get("invoice_date", "N/A"))
 
         col4, col5, col6 = st.columns(3)
-        col4.metric("Vendor",          (result.get("vendor_name") or "N/A")[:25])
-        col5.metric("Total Amount",    f"₹{float(result.get('total_amount') or 0):,.2f}")
-        col6.metric("Payment Terms",   result.get("payment_terms", "N/A"))
+        col4.metric("Vendor",         (result.get("vendor_name") or "N/A")[:25])
+        col5.metric("Total Amount",   f"₹{float(result.get('total_amount') or 0):,.2f}")
+        col6.metric("Payment Terms",  result.get("payment_terms", "N/A"))
 
         st.subheader("Tax Breakdown")
         tc1, tc2, tc3 = st.columns(3)
@@ -178,23 +223,94 @@ if page == "📤 Upload & Extract":
 
         if result.get("line_items"):
             st.subheader("Line Items")
-            import pandas as pd
-            df = pd.DataFrame(result["line_items"])
-            st.dataframe(df, width='stretch')
+            st.dataframe(pd.DataFrame(result["line_items"]), width="stretch")
+
+        save_col, _ = st.columns([1, 3])
+        if save_col.button("💾 Save to dataset", type="primary"):
+            added = _persist_results([result])
+            if added:
+                st.success("✅ Saved to extracted_invoices.json and vector store.")
+                st.cache_resource.clear()
+            else:
+                st.info("This invoice is already in the dataset.")
 
         with st.expander("Raw JSON"):
             st.json(result)
 
-    else:
+    elif mode == "Single invoice":
         st.info("Upload an invoice PDF above to get started.")
         st.markdown("""
         **What gets extracted:**
-        - Invoice & PO numbers
+        - Invoice & PO numbers 
         - Vendor name & GSTIN
         - Line items with quantities and rates
-        - GST breakdown (CGST / SGST / IGST)
-        - Payment terms
+        - GST breakdown (CGST / SGST / IGST) · Payment terms
         """)
+
+    # ═════════════════════════════════════════════════════════════════════════
+    # BULK MODE
+    # ═════════════════════════════════════════════════════════════════════════
+    elif mode == "Bulk upload" and uploaded_files:
+        st.caption(f"{len(uploaded_files)} file(s) selected.")
+
+        if st.button("⚡ Extract All", type="primary"):
+            results  = []
+            failed   = []
+            progress = st.progress(0, text="Starting extraction...")
+            status   = st.empty()
+
+            for idx, file in enumerate(uploaded_files):
+                status.text(f"Extracting {file.name}...")
+                tmp_path = _save_tmp(file)
+                try:
+                    data = extract_invoice_data(tmp_path)
+                    results.append(data)
+                except Exception as e:
+                    failed.append({"file": file.name, "error": str(e)})
+                finally:
+                    os.unlink(tmp_path)
+                progress.progress((idx + 1) / len(uploaded_files),
+                                  text=f"{idx + 1} / {len(uploaded_files)} processed")
+
+            progress.empty()
+            status.empty()
+
+            # ── Summary table ─────────────────────────────────────────────
+            if results:
+                st.success(f"✅ {len(results)} invoice(s) extracted"
+                           + (f", {len(failed)} failed." if failed else "."))
+
+                summary_df = pd.DataFrame([{
+                    "File":    r.get("source_file", ""),
+                    "Invoice": r.get("invoice_number", "N/A"),
+                    "Vendor":  (r.get("vendor_name") or "N/A")[:30],
+                    "Total":   f"₹{float(r.get('total_amount') or 0):,.0f}",
+                    "Status":  "✅ OK",
+                } for r in results] + [{
+                    "File": f["file"], "Invoice": "—", "Vendor": "—",
+                    "Total": "—", "Status": f"❌ {f['error'][:40]}",
+                } for f in failed])
+
+                st.dataframe(summary_df, width="stretch",
+                             height=35 * len(summary_df) + 38)
+
+                # ── Persist button ────────────────────────────────────────
+                save_col, _ = st.columns([1, 3])
+                if save_col.button("💾 Save all to dataset", type="primary"):
+                    added = _persist_results(results)
+                    if added:
+                        st.success(f"✅ {added} new invoice(s) added to dataset and vector store.")
+                        st.cache_resource.clear()
+                    else:
+                        st.info("All invoices are already in the dataset.")
+
+            if failed and not results:
+                st.error("All extractions failed.")
+                for f in failed:
+                    st.caption(f"❌ {f['file']}: {f['error']}")
+
+    elif mode == "Bulk upload":
+        st.info("Drop multiple PDF files above, then click Extract All.")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -275,8 +391,8 @@ elif page == "🚨 Anomaly Report":
     m1, m2, m3, m4 = st.columns(4)
     m1.metric("Total Invoices",   report.get("total_invoices", 0))
     m2.metric("🔴 High Severity", len(high))
-    m3.metric("🟡 Medium",        len(medium))
-    m4.metric("🟠 Low",           len(low))
+    m3.metric("🟠 Medium",        len(medium))
+    m4.metric("🟡 Low",           len(low))
 
     st.divider()
 
