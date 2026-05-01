@@ -14,6 +14,48 @@ from dotenv import load_dotenv
 load_dotenv()
 sys.path.insert(0, str(Path(__file__).parent))
 
+# ── Auto-bootstrap pipeline on cold start ────────────────────────────────────
+# Streamlit Cloud wipes the filesystem on every restart. This block detects a
+# cold start (no extracted_invoices.json) and silently runs the full pipeline
+# so invoices are always available without any manual intervention.
+ 
+import subprocess
+ 
+PROJECT_ROOT = Path(__file__).parent
+ 
+def _run(script: str, label: str, progress):
+    result = subprocess.run(
+        ["python", script],
+        cwd=PROJECT_ROOT,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        st.error(f"Bootstrap failed at {label}:\n{result.stderr[-800:]}")
+        st.stop()
+    progress.write(f"✅ {label}")
+ 
+def bootstrap_pipeline():
+    """Run the full data pipeline on first start or after a filesystem reset."""
+    extracted = PROJECT_ROOT / "data" / "extracted_invoices.json"
+    chroma    = PROJECT_ROOT / "data" / "chroma_db"
+ 
+    if extracted.exists() and chroma.exists():
+        return  # already initialised — nothing to do
+ 
+    st.info("⚙️ First-run setup: generating and processing invoices. This takes ~20 seconds...")
+    progress = st.empty()
+ 
+    _run("data/generate_documents.py",   "Invoices & POs generated",      progress)
+    _run("extraction/batch_extract.py",  "Invoices extracted (local)",     progress)
+    _run("rag/build_vectorstore.py",     "Vector store built",             progress)
+    _run("anomaly/detector.py",          "Anomaly detection complete",     progress)
+ 
+    progress.write("🚀 Setup complete — loading app...")
+    st.rerun()
+ 
+bootstrap_pipeline()
+
 # ── Page config ──────────────────────────────────────────────────────────────
 st.set_page_config(
     page_title="Invoice Intelligence",
@@ -45,7 +87,7 @@ st.markdown("""
 with st.sidebar:
     st.image("https://img.icons8.com/color/96/invoice.png", width=60)
     st.title("Invoice Intelligence\n Agent")
-    st.caption("AI-powered Source-to-Pay automation")
+    st.caption("AI-powered ERP:S2P automation")
     st.divider()
     page = st.radio(
         "Navigate",
