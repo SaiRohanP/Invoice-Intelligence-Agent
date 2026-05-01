@@ -12,30 +12,6 @@ import streamlit as st
 from dotenv import load_dotenv
 
 load_dotenv()
-
-import subprocess, pathlib
-
-# Always resolve paths relative to this file, not the working directory
-PROJECT_ROOT = pathlib.Path(__file__).parent
-
-def bootstrap_data():
-    if not (PROJECT_ROOT / "data/extracted_invoices.json").exists():
-        with st.spinner("First-run setup: generating sample data (~15 seconds)..."):
-            subprocess.run(
-                ["python", "data/generate_documents.py"],
-                cwd=PROJECT_ROOT, check=True
-            )
-            subprocess.run(
-                ["python", "extraction/batch_extract.py"],
-                cwd=PROJECT_ROOT, check=True
-            )
-            subprocess.run(
-                ["python", "rag/build_vectorstore.py"],
-                cwd=PROJECT_ROOT, check=True
-            )
-
-bootstrap_data()
-
 sys.path.insert(0, str(Path(__file__).parent))
 
 # ── Page config ──────────────────────────────────────────────────────────────
@@ -68,7 +44,7 @@ st.markdown("""
 # ── Sidebar ───────────────────────────────────────────────────────────────────
 with st.sidebar:
     st.image("https://img.icons8.com/color/96/invoice.png", width=60)
-    st.title("Invoice Intelligence \nAgent")
+    st.title("S2P Invoice\nIntelligence")
     st.caption("AI-powered Source-to-Pay automation")
     st.divider()
     page = st.radio(
@@ -80,7 +56,7 @@ with st.sidebar:
         label_visibility="collapsed",
     )
     st.divider()
-    st.caption("Built with Claude AI + Grok LLaMa AI + LangChain + ChromaDB")
+    st.caption("Built with Claude AI + LangChain + ChromaDB")
     st.caption("Observability: LangSmith")
 
 
@@ -104,7 +80,7 @@ def load_json(path: str, default=None):
 # ─────────────────────────────────────────────────────────────────────────────
 if page == "📤 Upload & Extract":
     st.header("📤 Upload & Extract Invoice")
-    st.caption("Upload an invoice PDF and PyMuPDF extracts all fields automatically.")
+    st.caption("Upload an invoice PDF and Claude Vision extracts all fields automatically.")
 
     uploaded = st.file_uploader(
         "Drop your invoice PDF here", type=["pdf"], help="Supports standard & GST invoices"
@@ -115,7 +91,7 @@ if page == "📤 Upload & Extract":
             tmp.write(uploaded.getbuffer())
             tmp_path = tmp.name
 
-        with st.spinner("🔍 Extracting data..."):
+        with st.spinner("🔍 Extracting data using Claude Vision..."):
             try:
                 from extraction.extractor import extract_invoice_data
                 result = extract_invoice_data(tmp_path)
@@ -147,7 +123,7 @@ if page == "📤 Upload & Extract":
             st.subheader("Line Items")
             import pandas as pd
             df = pd.DataFrame(result["line_items"])
-            st.dataframe(df, width=True)
+            st.dataframe(df, use_container_width=True)
 
         with st.expander("Raw JSON"):
             st.json(result)
@@ -184,9 +160,11 @@ elif page == "💬 Ask Questions":
         "Which invoices have CGST greater than ₹5,000?",
         "Show me all invoices from this month",
     ]
-    cols = st.columns(3)
-    for i, suggestion in enumerate(suggestions[:3]):
-        if cols[i % 3].button(suggestion, width=True):
+    row1 = st.columns(3)
+    row2 = st.columns(2)
+    all_cols = row1 + row2
+    for i, suggestion in enumerate(suggestions):
+        if all_cols[i].button(suggestion, use_container_width=True):
             st.session_state["query"] = suggestion
 
     st.divider()
@@ -321,5 +299,5 @@ elif page == "📊 Dashboard":
     st.dataframe(
         df.style.format({"Subtotal": "₹{:,.2f}", "CGST": "₹{:,.2f}",
                          "SGST": "₹{:,.2f}", "Total": "₹{:,.2f}"}),
-        width=True,
+        use_container_width=True,
     )
