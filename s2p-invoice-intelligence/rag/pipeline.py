@@ -21,7 +21,8 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import RunnablePassthrough, RunnableParallel
 
 EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
-CHROMA_DIR      = "data/chroma_db"
+# Absolute path so the module works regardless of cwd
+CHROMA_DIR      = str(Path(__file__).parent.parent / "data" / "chroma_db")
 
 
 def get_embeddings():
@@ -78,6 +79,19 @@ def build_vectorstore(extracted_path: str = "data/extracted_invoices.json") -> C
     invoices = json.load(open(extracted_path))
     docs     = [invoice_to_document(inv) for inv in invoices]
 
+    # Delete existing collection first to prevent duplicate documents
+    # on re-runs of the pipeline
+    try:
+        existing = Chroma(
+            persist_directory=CHROMA_DIR,
+            embedding_function=get_embeddings(),
+            collection_name="s2p_invoices",
+        )
+        existing.delete_collection()
+        print("Cleared existing collection.")
+    except Exception:
+        pass  # collection didn't exist yet — fine
+
     print(f"Embedding {len(docs)} invoices using {EMBEDDING_MODEL}...")
     vectorstore = Chroma.from_documents(
         documents=docs,
@@ -98,16 +112,21 @@ def load_vectorstore() -> Chroma:
 
 
 S2P_PROMPT = PromptTemplate.from_template("""
-You are an expert Accounts Payable analyst with deep knowledge of S2P workflows.
-Use the retrieved invoice data below to answer the question accurately and concisely.
-If the data does not contain enough information, say so clearly.
+You are an Accounts Payable data assistant. Answer using only the invoice data provided.
 
-Retrieved Invoice Data:
+Rules:
+- Give a single short sentence as the answer.
+- If listing multiple items, put each on its own line with a bullet point and one line gap between each bullet.
+- Never explain your process or reasoning.
+- Include invoice numbers and amounts where relevant.
+- If the answer is not in the data, say "Not found in the dataset."
+
+Invoice Data:
 {context}
 
 Question: {question}
 
-Answer (be specific, avoid mentioning every case or step, mention invoice numbers and amounts where relevant, reasoning should be brief):
+Answer:
 """)
 
 
@@ -121,8 +140,13 @@ def build_qa_chain(vectorstore: Chroma):
     Returns a chain that accepts {"question": str} and returns
     {"result": str, "source_documents": list[Document]}.
     """
-    llm = ChatGroq(model="llama-3.1-8b-instant", max_tokens=512)
-    retriever = vectorstore.as_retriever(search_type="similarity", search_kwargs={"k": 6})
+    llm = ChatGroq(model="llama-3.1-8b-instant", max_tokens=1024)
+
+    # Retrieve up to ALL documents for small collections so no invoice is
+    # missed. Cap at 20 to stay within the LLM context window.
+    total_docs = vectorstore._collection.count()
+    k          = min(total_docs, 20)
+    retriever  = vectorstore.as_retriever(search_type="similarity", search_kwargs={"k": k})
 
     # Retrieve docs and keep them for source attribution
     retrieve_and_format = RunnableParallel(

@@ -14,6 +14,12 @@ from dotenv import load_dotenv
 load_dotenv()
 sys.path.insert(0, str(Path(__file__).parent))
 
+# Absolute project root — all data paths are relative to this
+PROJECT_ROOT   = Path(__file__).parent
+DATA_DIR       = PROJECT_ROOT / "data"
+EXTRACTED_PATH = DATA_DIR / "extracted_invoices.json"
+CHROMA_PATH    = DATA_DIR / "chroma_db"
+
 # ── Auto-bootstrap pipeline on cold start ────────────────────────────────────
 # Streamlit Cloud wipes the filesystem on every restart. This block detects a
 # cold start (no extracted_invoices.json) and silently runs the full pipeline
@@ -99,22 +105,30 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ── Sidebar ───────────────────────────────────────────────────────────────────
+from streamlit_option_menu import option_menu
+
 with st.sidebar:
     st.image("https://img.icons8.com/color/96/invoice.png", width=60)
     st.title("Invoice Intelligence\n Agent")
     st.caption("AI-powered Source-to-Pay(ERP) automation")
     st.divider()
-    page = st.radio(
-        "Navigate",
-        ["📤 Upload & Extract",
-         "💬 Ask Questions",
-         "🚨 Anomaly Report",
-         "📊 Dashboard"],
-        label_visibility="collapsed",
+    page = option_menu(
+        menu_title=None,
+        options=["Upload & Extract", "Ask Questions", "Anomaly Report", "Dashboard"],
+        icons=["cloud-upload", "chat-dots", "exclamation-triangle", "bar-chart"],
+        default_index=0,
+        styles={
+            "container":         {"padding": "0px", "background-color": "transparent"},
+            "icon":              {"font-size": "15px"},
+            "nav-link":          {"font-size": "14px", "text-align": "left", "margin": "2px 0px"},
+            "nav-link-selected": {"background-color": "#0d7855", "color": "white", "font-weight": "600"},
+        },
     )
     st.divider()
     st.caption("Built with Claude AI + Groq LLaMa AI + LangChain + ChromaDB")
     st.caption("Observability: LangSmith")
+    st.divider()
+    st.caption("Author: [sairohanp](https://share.streamlit.io/user/sairohanp)")
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -122,8 +136,17 @@ with st.sidebar:
 def load_qa_chain():
     """Load vectorstore + QA chain (cached across sessions)."""
     from rag.pipeline import load_vectorstore, build_qa_chain
-    vs = load_vectorstore()
-    return build_qa_chain(vs)  # returns a callable: fn(question: str) -> dict
+    try:
+        vs = load_vectorstore()
+        # Trigger a quick count to verify collection is alive
+        vs._collection.count()
+        return build_qa_chain(vs)
+    except Exception:
+        # Collection was deleted/recreated — clear cache and reload fresh
+        st.cache_resource.clear()
+        from rag.pipeline import load_vectorstore, build_qa_chain
+        vs = load_vectorstore()
+        return build_qa_chain(vs)
 
 
 def load_json(path: str, default=None):
@@ -135,7 +158,7 @@ def load_json(path: str, default=None):
 # ─────────────────────────────────────────────────────────────────────────────
 # PAGE 1 — Upload & Extract
 # ─────────────────────────────────────────────────────────────────────────────
-if page == "📤 Upload & Extract":
+if page == "Upload & Extract":
     st.header("📤 Upload & Extract Invoice")
     st.caption("Upload one or multiple invoice PDFs — all fields extracted automatically.")
 
@@ -172,22 +195,29 @@ if page == "📤 Upload & Extract":
 
     # ── Helper: append results to extracted_invoices.json + vector store ──────
     def _persist_results(new_results: list[dict]):
-        extracted_path = Path("data/extracted_invoices.json")
-        existing = json.load(open(extracted_path)) if extracted_path.exists() else []
+        extracted_path = EXTRACTED_PATH
+        existing       = json.load(open(extracted_path)) if extracted_path.exists() else []
+        # Deduplicate by both filename AND invoice number to prevent double entries
         existing_files = {r["source_file"] for r in existing}
-        added = [r for r in new_results if r["source_file"] not in existing_files]
+        existing_ids   = {r["invoice_number"] for r in existing if r.get("invoice_number")}
+        added = [
+            r for r in new_results
+            if r["source_file"] not in existing_files
+            and r.get("invoice_number") not in existing_ids
+        ]
         if added:
             json.dump(existing + added, open(extracted_path, "w"), indent=2)
-            # Update vector store with new documents
-            from rag.pipeline import get_embeddings, invoice_to_document, CHROMA_DIR
+            from rag.pipeline import get_embeddings, invoice_to_document
             from langchain_community.vectorstores import Chroma
             docs = [invoice_to_document(r) for r in added]
             vs   = Chroma(
-                persist_directory=CHROMA_DIR,
+                persist_directory=str(CHROMA_PATH),
                 embedding_function=get_embeddings(),
                 collection_name="s2p_invoices",
             )
-            vs.add_documents(docs)
+            # Pass unique IDs so ChromaDB rejects duplicates on re-insert
+            ids = [r.get("invoice_number", r["source_file"]) for r in added]
+            vs.add_documents(docs, ids=ids)
         return len(added)
 
     # ═════════════════════════════════════════════════════════════════════════
@@ -241,7 +271,7 @@ if page == "📤 Upload & Extract":
         st.info("Upload an invoice PDF above to get started.")
         st.markdown("""
         **What gets extracted:**
-        - Invoice & PO numbers 
+        - Invoice & PO numbers
         - Vendor name & GSTIN
         - Line items with quantities and rates
         - GST breakdown (CGST / SGST / IGST) · Payment terms
@@ -275,7 +305,6 @@ if page == "📤 Upload & Extract":
             progress.empty()
             status.empty()
 
-            # ── Summary table ─────────────────────────────────────────────
             if results:
                 st.success(f"✅ {len(results)} invoice(s) extracted"
                            + (f", {len(failed)} failed." if failed else "."))
@@ -294,7 +323,6 @@ if page == "📤 Upload & Extract":
                 st.dataframe(summary_df, width="stretch",
                              height=35 * len(summary_df) + 38)
 
-                # ── Persist button ────────────────────────────────────────
                 save_col, _ = st.columns([1, 3])
                 if save_col.button("💾 Save all to dataset", type="primary"):
                     added = _persist_results(results)
@@ -316,11 +344,11 @@ if page == "📤 Upload & Extract":
 # ─────────────────────────────────────────────────────────────────────────────
 # PAGE 2 — RAG Q&A
 # ─────────────────────────────────────────────────────────────────────────────
-elif page == "💬 Ask Questions":
+elif page == "Ask Questions":
     st.header("💬 Ask Questions About Your Invoices")
     st.caption("Natural language queries across all processed invoices using RAG.")
 
-    if not os.path.exists("data/chroma_db"):
+    if not CHROMA_PATH.exists():
         st.warning("⚠️ Vector store not ready yet. Please wait a moment and refresh the page.")
         st.stop()
 
@@ -366,7 +394,7 @@ elif page == "💬 Ask Questions":
 # ─────────────────────────────────────────────────────────────────────────────
 # PAGE 3 — Anomaly Report
 # ─────────────────────────────────────────────────────────────────────────────
-elif page == "🚨 Anomaly Report":
+elif page == "Anomaly Report":
     st.header("🚨 Anomaly Detection Report")
 
     col_run, col_info = st.columns([1, 3])
@@ -376,11 +404,11 @@ elif page == "🚨 Anomaly Report":
             run_detection()
         st.rerun()
 
-    if not os.path.exists("data/anomalies.json"):
+    if not (DATA_DIR / "anomalies.json").exists():
         st.info("Click 'Run Detection Now' to analyse your invoices.")
         st.stop()
 
-    report = load_json("data/anomalies.json", {})
+    report = load_json(str(DATA_DIR / "anomalies.json"), {})
     flags  = report.get("flags", [])
 
     # Summary metrics
@@ -391,8 +419,8 @@ elif page == "🚨 Anomaly Report":
     m1, m2, m3, m4 = st.columns(4)
     m1.metric("Total Invoices",   report.get("total_invoices", 0))
     m2.metric("🔴 High Severity", len(high))
-    m3.metric("🟠 Medium",        len(medium))
-    m4.metric("🟡 Low",           len(low))
+    m3.metric("🟡 Medium",        len(medium))
+    m4.metric("🟠 Low",           len(low))
 
     st.divider()
 
@@ -425,10 +453,10 @@ elif page == "🚨 Anomaly Report":
 # ─────────────────────────────────────────────────────────────────────────────
 # PAGE 4 — Dashboard
 # ─────────────────────────────────────────────────────────────────────────────
-elif page == "📊 Dashboard":
+elif page == "Dashboard":
     st.header("📊 Invoice Batch Dashboard")
 
-    invoices = load_json("data/extracted_invoices.json")
+    invoices = load_json(str(EXTRACTED_PATH))
     if not invoices:
         st.warning("No invoice data found yet. Please wait a moment and refresh the page.")
         st.stop()

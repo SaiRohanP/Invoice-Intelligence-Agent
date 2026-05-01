@@ -187,7 +187,7 @@ def generate_invoice(inv_id: int, po_id: int, vendor: dict,
 # ── Main generation ──────────────────────────────────────────────────────────
 if __name__ == "__main__":
     # ── Configure here ──────────────────────────────
-    TOTAL_INVOICES   = 30    # change to however many you want
+    TOTAL_INVOICES   = 34    # change to however many you want
     NUM_OVERCHARGE   = 1     # invoices with amount > PO approved
     NUM_DUPLICATE    = 1     # invoices with duplicate invoice number
     NUM_WRONG_PO     = 1     # invoices with invalid PO reference
