@@ -107,7 +107,7 @@ Retrieved Invoice Data:
 
 Question: {question}
 
-Answer (be specific, mention invoice numbers and amounts where relevant):
+Answer (be specific, avoid mentioning every case or step, mention invoice numbers and amounts where relevant, reasoning should be brief):
 """)
 
 

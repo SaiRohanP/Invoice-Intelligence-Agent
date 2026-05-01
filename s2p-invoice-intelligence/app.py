@@ -18,58 +18,58 @@ sys.path.insert(0, str(Path(__file__).parent))
 # Streamlit Cloud wipes the filesystem on every restart. This block detects a
 # cold start (no extracted_invoices.json) and silently runs the full pipeline
 # so invoices are always available without any manual intervention.
- 
-import subprocess
- 
-PROJECT_ROOT = Path(__file__).parent
- 
-def _run(script: str, label: str, progress):
-    result = subprocess.run(
-        ["python", script],
-        cwd=PROJECT_ROOT,
-        capture_output=True,
-        text=True,
-    )
-    if result.returncode != 0:
-        st.error(f"Bootstrap failed at {label}:\n{result.stderr[-800:]}")
-        st.stop()
-    progress.write(f"✅ {label}")
- 
-def _ensure_packages():
-    """Install packages that may be missing from the deployed environment."""
-    required = ["faker", "reportlab", "pymupdf"]
-    for pkg in required:
-        try:
-            __import__(pkg if pkg != "pymupdf" else "fitz")
-        except ImportError:
-            subprocess.check_call(
-                [sys.executable, "-m", "pip", "install", pkg, "-q"],
-                cwd=PROJECT_ROOT,
-            )
- 
-def bootstrap_pipeline():
-    """Run the full data pipeline on first start or after a filesystem reset."""
-    extracted = PROJECT_ROOT / "data" / "extracted_invoices.json"
-    chroma    = PROJECT_ROOT / "data" / "chroma_db"
- 
-    if extracted.exists() and chroma.exists():
-        return  # already initialised — nothing to do
- 
-    st.info("⚙️ First-run setup: generating and processing invoices. This takes ~20 seconds...")
-    progress = st.empty()
- 
-    _ensure_packages()
-    progress.write("✅ Dependencies verified")
- 
-    _run("data/generate_documents.py",   "Invoices & POs generated",      progress)
-    _run("extraction/batch_extract.py",  "Invoices extracted (local)",     progress)
-    _run("rag/build_vectorstore.py",     "Vector store built",             progress)
-    _run("anomaly/detector.py",          "Anomaly detection complete",     progress)
- 
-    progress.write("🚀 Setup complete — loading app...")
-    st.rerun()
- 
-bootstrap_pipeline()
+
+# import subprocess
+
+# PROJECT_ROOT = Path(__file__).parent
+
+# def _run(script: str, label: str, progress):
+#     result = subprocess.run(
+#         ["python", script],
+#         cwd=PROJECT_ROOT,
+#         capture_output=True,
+#         text=True,
+#     )
+#     if result.returncode != 0:
+#         st.error(f"Bootstrap failed at {label}:\n{result.stderr[-800:]}")
+#         st.stop()
+#     progress.write(f"✅ {label}")
+
+# def _ensure_packages():
+#     """Install packages that may be missing from the deployed environment."""
+#     required = ["faker", "reportlab", "pymupdf", "fastembed"]
+#     for pkg in required:
+#         try:
+#             __import__(pkg if pkg != "pymupdf" else "fitz") if pkg != "fastembed" else __import__("fastembed")
+#         except ImportError:
+#             subprocess.check_call(
+#                 [sys.executable, "-m", "pip", "install", pkg, "-q"],
+#                 cwd=PROJECT_ROOT,
+#             )
+
+# def bootstrap_pipeline():
+#     """Run the full data pipeline on first start or after a filesystem reset."""
+#     extracted = PROJECT_ROOT / "data" / "extracted_invoices.json"
+#     chroma    = PROJECT_ROOT / "data" / "chroma_db"
+
+#     if extracted.exists() and chroma.exists():
+#         return  # already initialised — nothing to do
+
+#     st.info("⚙️ First-run setup: generating and processing invoices. This takes ~20 seconds...")
+#     progress = st.empty()
+
+#     _ensure_packages()
+#     progress.write("✅ Dependencies verified")
+
+#     _run("data/generate_documents.py",   "Invoices & POs generated",      progress)
+#     _run("extraction/batch_extract.py",  "Invoices extracted (local)",     progress)
+#     _run("rag/build_vectorstore.py",     "Vector store built",             progress)
+#     _run("anomaly/detector.py",          "Anomaly detection complete",     progress)
+
+#     progress.write("🚀 Setup complete — loading app...")
+#     st.rerun()
+
+# bootstrap_pipeline()
 
 # ── Page config ──────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -102,7 +102,7 @@ st.markdown("""
 with st.sidebar:
     st.image("https://img.icons8.com/color/96/invoice.png", width=60)
     st.title("Invoice Intelligence\n Agent")
-    st.caption("AI-powered ERP:S2P automation")
+    st.caption("AI-powered Source-to-Pay automation")
     st.divider()
     page = st.radio(
         "Navigate",
@@ -123,7 +123,7 @@ def load_qa_chain():
     """Load vectorstore + QA chain (cached across sessions)."""
     from rag.pipeline import load_vectorstore, build_qa_chain
     vs = load_vectorstore()
-    return build_qa_chain(vs)
+    return build_qa_chain(vs)  # returns a callable: fn(question: str) -> dict
 
 
 def load_json(path: str, default=None):
@@ -205,7 +205,7 @@ elif page == "💬 Ask Questions":
     st.caption("Natural language queries across all processed invoices using RAG.")
 
     if not os.path.exists("data/chroma_db"):
-        st.warning("⚠️ Vector store not built yet. Run `python rag/build_vectorstore.py` first.")
+        st.warning("⚠️ Vector store not ready yet. Please wait a moment and refresh the page.")
         st.stop()
 
     # Suggested queries
@@ -235,7 +235,7 @@ elif page == "💬 Ask Questions":
         with st.spinner("Searching invoices..."):
             try:
                 qa_chain = load_qa_chain()
-                result   = qa_chain({"query": query})
+                result   = qa_chain(query)
                 st.success(result["result"])
 
                 with st.expander("📄 Source invoices used"):
@@ -314,7 +314,7 @@ elif page == "📊 Dashboard":
 
     invoices = load_json("data/extracted_invoices.json")
     if not invoices:
-        st.warning("No extracted invoices found. Run batch_extract.py first.")
+        st.warning("No invoice data found yet. Please wait a moment and refresh the page.")
         st.stop()
 
     import pandas as pd
@@ -352,9 +352,21 @@ elif page == "📊 Dashboard":
                       labels=["<10K", "10–30K", "30–60K", "60–100K", ">100K"])
         st.bar_chart(bins.value_counts().sort_index())
 
+    st.divider()
     st.subheader("All Invoices")
     st.dataframe(
         df.style.format({"Subtotal": "₹{:,.2f}", "CGST": "₹{:,.2f}",
                          "SGST": "₹{:,.2f}", "Total": "₹{:,.2f}"}),
         width='stretch',
+        height=35 * len(df) + 38,
+        column_config={
+            "Invoice":  st.column_config.TextColumn("Invoice",  width="small"),
+            "Vendor":   st.column_config.TextColumn("Vendor",   width="large"),
+            "PO Ref":   st.column_config.TextColumn("PO Ref",   width="small"),
+            "Date":     st.column_config.TextColumn("Date",     width="small"),
+            "Subtotal": st.column_config.NumberColumn("Subtotal", format="₹%.2f", width="medium"),
+            "CGST":     st.column_config.NumberColumn("CGST",     format="₹%.2f", width="small"),
+            "SGST":     st.column_config.NumberColumn("SGST",     format="₹%.2f", width="small"),
+            "Total":    st.column_config.NumberColumn("Total",    format="₹%.2f", width="medium"),
+        },
     )
