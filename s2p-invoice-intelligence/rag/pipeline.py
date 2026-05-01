@@ -112,21 +112,15 @@ def load_vectorstore() -> Chroma:
 
 
 S2P_PROMPT = PromptTemplate.from_template("""
-You are an Accounts Payable data assistant. Answer using only the invoice data provided.
+You are an expert Accounts Payable analyst with deep knowledge of S2P workflows.
+Use the retrieved invoice data below to answer the question accurately and concisely.
+Answer in a straight to the point manner with a short reasoning on your logic.
+Don't mention anything that doesn't satisfy the query.
 
-Rules:
-- Give a single short sentence as the answer.
-- If listing multiple items, put each on its own line with a bullet point and one line gap between each bullet.
-- Never explain your process or reasoning.
-- Include invoice numbers and amounts where relevant.
-- If the answer is not in the data, say "Not found in the dataset."
-
-Invoice Data:
+Retrieved Invoice Data:
 {context}
 
 Question: {question}
-
-Answer:
 """)
 
 

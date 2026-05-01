@@ -114,14 +114,14 @@ with st.sidebar:
     st.divider()
     page = option_menu(
         menu_title=None,
-        options=["Upload & Extract", "Ask Questions", "Anomaly Report", "Dashboard"],
-        icons=["cloud-upload", "chat-dots", "exclamation-triangle", "bar-chart"],
+        options=["Upload & Extract", "Dashboard", "Anomaly Report", "Ask Questions"],
+        icons=["cloud-upload", "bar-chart", "exclamation-triangle", "chat-dots"],
         default_index=0,
         styles={
             "container":         {"padding": "0px", "background-color": "transparent"},
             "icon":              {"font-size": "15px"},
             "nav-link":          {"font-size": "14px", "text-align": "left", "margin": "2px 0px"},
-            "nav-link-selected": {"background-color": "#0d7855", "color": "white", "font-weight": "600"},
+            "nav-link-selected": {"background-color": "", "color": "white", "font-weight": "600"},
         },
     )
     st.divider()
@@ -419,8 +419,8 @@ elif page == "Anomaly Report":
     m1, m2, m3, m4 = st.columns(4)
     m1.metric("Total Invoices",   report.get("total_invoices", 0))
     m2.metric("🔴 High Severity", len(high))
-    m3.metric("🟡 Medium",        len(medium))
-    m4.metric("🟠 Low",           len(low))
+    m3.metric("🟠 Medium",        len(medium))
+    m4.metric("🟡 Low",           len(low))
 
     st.divider()
 
@@ -439,7 +439,7 @@ elif page == "Anomaly Report":
             sev   = flag.get("severity", "LOW")
             color = "flag-high" if sev == "HIGH" else \
                     "flag-medium" if sev == "MEDIUM" else "flag-low"
-            icon  = "🔴" if sev == "HIGH" else "🟡" if sev == "MEDIUM" else "🟠"
+            icon  = "🔴" if sev == "HIGH" else "🟠" if sev == "MEDIUM" else "🟡"
             st.markdown(
                 f'<div class="{color}">'
                 f'<strong>{icon} [{flag["type"]}]</strong> — '
