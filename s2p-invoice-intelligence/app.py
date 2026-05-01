@@ -35,6 +35,18 @@ def _run(script: str, label: str, progress):
         st.stop()
     progress.write(f"✅ {label}")
  
+def _ensure_packages():
+    """Install packages that may be missing from the deployed environment."""
+    required = ["faker", "reportlab", "pymupdf"]
+    for pkg in required:
+        try:
+            __import__(pkg if pkg != "pymupdf" else "fitz")
+        except ImportError:
+            subprocess.check_call(
+                [sys.executable, "-m", "pip", "install", pkg, "-q"],
+                cwd=PROJECT_ROOT,
+            )
+ 
 def bootstrap_pipeline():
     """Run the full data pipeline on first start or after a filesystem reset."""
     extracted = PROJECT_ROOT / "data" / "extracted_invoices.json"
@@ -45,6 +57,9 @@ def bootstrap_pipeline():
  
     st.info("⚙️ First-run setup: generating and processing invoices. This takes ~20 seconds...")
     progress = st.empty()
+ 
+    _ensure_packages()
+    progress.write("✅ Dependencies verified")
  
     _run("data/generate_documents.py",   "Invoices & POs generated",      progress)
     _run("extraction/batch_extract.py",  "Invoices extracted (local)",     progress)
