@@ -16,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 # ── Page config ──────────────────────────────────────────────────────────────
 st.set_page_config(
-    page_title="S2P Invoice Intelligence",
+    page_title="Invoice Intelligence",
     page_icon="📄",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -44,7 +44,7 @@ st.markdown("""
 # ── Sidebar ───────────────────────────────────────────────────────────────────
 with st.sidebar:
     st.image("https://img.icons8.com/color/96/invoice.png", width=60)
-    st.title("S2P Invoice\nIntelligence")
+    st.title("Invoice Intelligence\n Agent")
     st.caption("AI-powered Source-to-Pay automation")
     st.divider()
     page = st.radio(
@@ -56,7 +56,7 @@ with st.sidebar:
         label_visibility="collapsed",
     )
     st.divider()
-    st.caption("Built with Claude AI + LangChain + ChromaDB")
+    st.caption("Built with Claude AI + Groq LLaMa AI + LangChain + ChromaDB")
     st.caption("Observability: LangSmith")
 
 
@@ -80,7 +80,7 @@ def load_json(path: str, default=None):
 # ─────────────────────────────────────────────────────────────────────────────
 if page == "📤 Upload & Extract":
     st.header("📤 Upload & Extract Invoice")
-    st.caption("Upload an invoice PDF and Claude Vision extracts all fields automatically.")
+    st.caption("Upload an invoice PDF and PyMuPDF extracts all fields automatically.")
 
     uploaded = st.file_uploader(
         "Drop your invoice PDF here", type=["pdf"], help="Supports standard & GST invoices"
@@ -91,7 +91,7 @@ if page == "📤 Upload & Extract":
             tmp.write(uploaded.getbuffer())
             tmp_path = tmp.name
 
-        with st.spinner("🔍 Extracting data using Claude Vision..."):
+        with st.spinner("🔍 Extracting data..."):
             try:
                 from extraction.extractor import extract_invoice_data
                 result = extract_invoice_data(tmp_path)
@@ -123,7 +123,7 @@ if page == "📤 Upload & Extract":
             st.subheader("Line Items")
             import pandas as pd
             df = pd.DataFrame(result["line_items"])
-            st.dataframe(df, use_container_width=True)
+            st.dataframe(df, width='stretch')
 
         with st.expander("Raw JSON"):
             st.json(result)
@@ -164,7 +164,7 @@ elif page == "💬 Ask Questions":
     row2 = st.columns(2)
     all_cols = row1 + row2
     for i, suggestion in enumerate(suggestions):
-        if all_cols[i].button(suggestion, use_container_width=True):
+        if all_cols[i].button(suggestion, width='stretch'):
             st.session_state["query"] = suggestion
 
     st.divider()
@@ -299,5 +299,5 @@ elif page == "📊 Dashboard":
     st.dataframe(
         df.style.format({"Subtotal": "₹{:,.2f}", "CGST": "₹{:,.2f}",
                          "SGST": "₹{:,.2f}", "Total": "₹{:,.2f}"}),
-        use_container_width=True,
+        width='stretch',
     )
