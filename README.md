@@ -19,7 +19,7 @@ User Interface (Streamlit)
 
 ## ✨ Features
 
-| Feature | Technology | IBM JD Keyword |
+| Feature | Technology |
 |---|---|---|
 | Multimodal invoice extraction | Claude Vision API | AI/ML, agentic workflows |
 | RAG Q&A over invoice batch | LangChain + ChromaDB | Pipelines, ETL |
@@ -33,16 +33,16 @@ User Interface (Streamlit)
 ```
 s2p-invoice-intelligence/
 ├── data/
-│   └── generate_documents.py    # Day 1 — synthetic invoice + PO generation
+│   └── generate_documents.py    
 ├── extraction/
-│   ├── extractor.py             # Day 2 — Claude Vision extraction
-│   └── batch_extract.py         # Day 2 — batch processing
+│   ├── extractor.py             
+│   └── batch_extract.py         
 ├── rag/
-│   ├── pipeline.py              # Day 3 — ChromaDB + LangChain RAG
-│   └── build_vectorstore.py     # Day 3 — build embeddings
+│   ├── pipeline.py              
+│   └── build_vectorstore.py     
 ├── anomaly/
-│   └── detector.py              # Day 4 — rule checks + AI audit
-├── app.py                       # Day 5 — Streamlit UI
+│   └── detector.py              
+├── app.py                       
 ├── requirements.txt
 └── .env.example
 ```
@@ -65,15 +65,8 @@ All LLM calls are automatically traced in [LangSmith](https://smith.langchain.co
 - Agent reasoning traces
 - End-to-end pipeline performance
 
-## 🔮 Planned Extensions
-
-- [ ] 3-way PO + GRN + Invoice matching
-- [ ] FastAPI microservice layer
-- [ ] Event-driven webhook triggers
-- [ ] Docker containerisation + GitHub Actions CI/CD
-- [ ] PostgreSQL persistent store
-- [ ] IBM Watsonx Orchestrate integration
-
 ---
+
+DEMO VIDEO: https://www.linkedin.com/feed/update/urn:li:activity:7456000946289004544/
 
 *Built as a portfolio project to demonstrate S2P automation, agentic AI workflows, and enterprise integration patterns.*
